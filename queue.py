@@ -23,9 +23,13 @@ csvfile.close()
 #example beep to adjust volume
 winsound.Beep(1000, 500)
 
+#For estimating time remaining
+queue_start_time = time.time()
+queue_start_position = 0
+
 while True:
     now = datetime.datetime.now()
-    
+    now_seconds = time.time()
     #Wait until it has been 15 seconds since last reading
     while now - last_sample_datetime < sample_rate:
         #print(str(now - last_sample_datetime))
@@ -38,7 +42,7 @@ while True:
 
     #remove the blue and green channels and threshold the red channel to highlight text
     b,g,r = cv2.split(img)
-    ret,img = cv2.threshold(r,127,255,cv2.THRESH_BINARY)
+    ret,img = cv2.threshold(r,200,255,cv2.THRESH_BINARY)
     
     #Apply OCR to image
     string = pytesseract.image_to_string(img)
@@ -50,18 +54,32 @@ while True:
     last_text.close()
     
     #extract the queue position. Include letters that the OCR might think the numbers are
-    r1 = re.findall(r'queue: ([sSlLiIoO\d]+)', string)
+    r1 = re.findall(r'queue: ([sSlLiIoOzZ\d\]]+)', string)
     
     #print(string)
     if len(r1) > 0:
         #Replace any letters with numbers
         r1[0] = re.sub(r'[sS]', r'5', r1[0])
-        r1[0] = re.sub(r'[lLiI]', r'1', r1[0])
+        r1[0] = re.sub(r'[lLiI\]]', r'1', r1[0])
         r1[0] = re.sub(r'[oO]', r'0', r1[0])
+        r1[0] = re.sub(r'[zZ]', r'2', r1[0])
         
         #print queue position
-        print(r1[0])
+        print('')
+        print('Position in queue: ' + r1[0])
         
+        #Estimate time remaining based on average rate while in queue
+        if queue_start_position == 0:
+            queue_start_position = int(r1[0])
+        elif queue_start_position != r1[0]:
+            time_in_queue = int(now_seconds - queue_start_time)
+            seconds_remaining = int((time_in_queue * queue_start_position) / (queue_start_position - int(r1[0])))
+            time_remaining = datetime.timedelta(seconds = seconds_remaining)
+            end_time = now + time_remaining
+            print('Estimated time left: ' + str(int(seconds_remaining/60)) + ' min')
+            print('Estimated end time: ' + str(end_time.hour) + ':' + str("{:02d}".format(end_time.minute)))
+            
+            
         #log the data into the csv file
         csvfile = open(csvfilename, 'a+')
         csvfile.write(str(now.month) + '/' + str(now.day) + '/' + str(now.year) + ' ' + str(now.hour) + ':' + str(now.minute) + ':' + str(now.second) + ',' + r1[0] + '\n')
